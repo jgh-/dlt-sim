@@ -5,7 +5,7 @@
 - CryptoPP 6.x
 - CMake
 - C++14 compatible compiler
-
+- ncurses
 
 ### Build
 
