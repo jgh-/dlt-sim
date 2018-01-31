@@ -32,10 +32,10 @@ namespace sim {
             WND_LOG
         };
 
-        std::recursive_mutex mut_;
         int64_t current_step_{0};
         std::map<element, WINDOW*> wnd_;
         std::map<element, bool> dirty_;
+        std::map<element, std::mutex> mut_;
         std::deque<std::string> loglines_;
         std::chrono::steady_clock::time_point last_draw_ {std::chrono::steady_clock::now()};
         int max_loglines_{10};

@@ -39,14 +39,14 @@ namespace sim {
 
     void
     ui::set_step(int64_t step) {
-        std::unique_lock<std::recursive_mutex> mut_;
+        std::unique_lock<std::mutex> mut(mut_[element::WND_STATE]);
         current_step_ = step;
         dirty_[element::WND_STATE] = true;
     }
 
     void
     ui::log(std::string str) {
-        std::unique_lock<std::recursive_mutex> mut_;
+        std::unique_lock<std::mutex> mut(mut_[element::WND_LOG]);
         loglines_.push_back(str);
         if(loglines_.size() > max_loglines_) {
             loglines_.pop_front();
@@ -56,7 +56,7 @@ namespace sim {
 
     void
     ui::draw_state(bool wnd) {
-        std::unique_lock<std::recursive_mutex> mut_;
+        std::unique_lock<std::mutex> mut(mut_[element::WND_STATE]);
 
         const int h = 6;
         const int w = 25;
@@ -93,7 +93,7 @@ namespace sim {
 
     void
     ui::draw_log(bool wnd) {
-        std::unique_lock<std::recursive_mutex> mut_;
+        std::unique_lock<std::mutex> mut(mut_[element::WND_LOG]);
         
         int maxx, maxy;
         getmaxyx(stdscr,maxy,maxx);
@@ -124,9 +124,11 @@ namespace sim {
         }
         
         // (re)Draw text if needed
-        if(dirty) {
+        if(dirty && !loglines_.empty()) {
             for(auto& it : loglines_) {
-                mvprintw(++y, x+1, "%s", it.c_str());
+                if(!it.empty()) {
+                    mvprintw(++y, x+1, "%s", it.c_str());
+                }
             }
             dirty_[element::WND_LOG] = false;
         }
@@ -135,7 +137,6 @@ namespace sim {
     void
     ui::redraw() 
     {
-        std::unique_lock<std::recursive_mutex> mut_;
         auto now = std::chrono::steady_clock::now();
         if(now - last_draw_ >= std::chrono::milliseconds(33)) {
             draw_log();

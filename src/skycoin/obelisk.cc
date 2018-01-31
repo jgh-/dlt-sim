@@ -70,7 +70,6 @@ struct node : public sim::node<packet>, public sim::component {
             
             if(!have) {
                 blocks.push_back(pkt.blk);
-                send_packet(pkt);
                 if(observer) {
                     std::string str = std::to_string(id) + "-chain: ";
                     for(auto& it : blocks) {
@@ -79,6 +78,7 @@ struct node : public sim::node<packet>, public sim::component {
                     }
                     ui.log(str);    
                 }
+                send_packet(pkt);
             }
         }
         if(pkt.give) {
@@ -216,16 +216,21 @@ struct node : public sim::node<packet>, public sim::component {
             std::sort(txs.begin(), txs.end(), [](std::shared_ptr<sim::tx>& lhs, std::shared_ptr<sim::tx>& rhs) {
                 return *lhs < *rhs;
             });
-            //auto merkle = tx_merkle();
-            //auto h = sim::sha_shortcode(merkle);
-            //sim::log().info("submitting block candidate {} ({})", h, txs.size());
+
+
+            // move to staging in case we are the winner.
+            current_block = std::make_shared<sim::block>();
+            std::move(txs.begin(), txs.end(), std::back_inserter(current_block->txs));
+            txs.erase(txs.begin(), txs.end());
             
-            {
-                // move to staging in case we are the winner.
-                current_block = std::make_shared<sim::block>();
-                std::move(txs.begin(), txs.end(), std::back_inserter(current_block->txs));
-                current_block->recompute_hash();
-                txs.erase(txs.begin(), txs.end());
+            if(!blocks.empty()) {
+                current_block->prev_block = blocks.back()->hash();
+            }
+            
+            current_block->recompute_hash();
+            
+            if(observer) {
+                ui.log(std::to_string(id) + ": created block candidate " + sim::sha_shortcode(current_block->hash()));
             }
             {
                 // send out our opinion (that we are the winner, naturally)
