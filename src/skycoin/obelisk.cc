@@ -21,7 +21,7 @@ const int N = 50; // number of nodes
 //const int B = N; // number of blockmaking nodes
 const int Z = N * 9 / 10; // number of block candidates before forming opinion
 const int observerCount = N / 5;
-const std::pair<int, int> stepsPerTxRange { stepsPer100ms * 10, stepsPer100ms * 20 };
+const std::pair<int, int> stepsPerTxRange { stepsPer100ms * 10, stepsPer100ms * 25 };
 const std::pair<int, int> latencyRange { stepsPer100ms, stepsPer100ms * 4 };
 //static int tx_seqno = 0;
 static int next_nodeid = 0;
@@ -48,7 +48,14 @@ struct node : public sim::node<packet>, public sim::component {
     , txsteps(tx_steps)
     , id(++next_nodeid)
     , observer(observer)
-    {}; // id would be replaced by a public key
+    {
+
+        auto genesis = std::make_shared<sim::block>();
+        genesis->txs.emplace_back(new sim::tx(0xD34DBEEF));
+        genesis->recompute_hash();
+        blocks.push_back(genesis);
+
+    }; // id would be replaced by a public key
     
     void packet_callback(const packet& pkt) override {
         std::unique_lock<std::recursive_mutex> lk(mut);
@@ -68,8 +75,11 @@ struct node : public sim::node<packet>, public sim::component {
                 return sha == b->hash();
             }) != blocks.end();
             
-            if(!have) {
+            if(!have && pkt.blk->prev_block == blocks.back()->hash()) {
                 blocks.push_back(pkt.blk);
+                if(pkt.blk->hash() != curr_winner) {
+                    log(std::to_string(id) + ":: conflict: " + sim::sha_shortcode(curr_winner) + " != " + sim::sha_shortcode(pkt.blk->hash()));
+                }
                 if(observer) {
                     std::string str = std::to_string(id) + "-chain: ";
                     for(auto& it : blocks) {
@@ -79,6 +89,8 @@ struct node : public sim::node<packet>, public sim::component {
                     log(str);    
                 }
                 send_packet(pkt);
+                int t = 0;
+                curr_winner = sim::sha256((uint8_t*)&t, sizeof(t));
             }
         }
         if(pkt.give) {
@@ -156,6 +168,7 @@ struct node : public sim::node<packet>, public sim::component {
                 
             } else {
                 // we didnt, request from someone who did.
+                curr_winner = long_run;
                 packet p ;
                 p.give = std::make_shared<sim::sha256_t>(long_run);
                 send_packet(p);
@@ -245,7 +258,14 @@ struct node : public sim::node<packet>, public sim::component {
             }
         }
     }
-    
+    void print_chain() {
+        std::string str = std::to_string(id) + "-chain: ";
+        for(auto& it : blocks) {
+            auto sha = it->hash();
+            str += sim::sha_shortcode(sha) + " ";
+        }
+        sim::log().info(str);
+    }
     void log(std::string str) {
         if(ui) {
             ui->log(str);
@@ -256,6 +276,7 @@ struct node : public sim::node<packet>, public sim::component {
 
     node(const node& other)
     : sim::node<packet>(other)
+    , curr_winner(other.curr_winner)
     , ui(other.ui)
     , current_block(other.current_block)
     , txs(other.txs)
@@ -269,6 +290,7 @@ struct node : public sim::node<packet>, public sim::component {
     , last_txstep(other.last_txstep)
     , cur_seq(other.cur_seq) {};
     
+    sim::sha256_t curr_winner;
     sim::ui* ui;
     std::recursive_mutex mut;
     std::shared_ptr<sim::block> current_block;
@@ -293,55 +315,66 @@ int main(int argc, const char * argv[]) {
     }
     sim::engine engine(seed);
     std::atomic<bool> run {true};
-    sim::ui ui {};
-    ui.log("Using seed " + std::to_string(seed));
     std::vector<node> nodes;
-    int observers = 0;
+    {
+        sim::ui ui {};
+        ui.log("Using seed " + std::to_string(seed));
+        
+        int observers = 0;
 
-    for(int i = 0 ; i < N; i++) {
-        bool observer = (observers++ < observerCount);
-        nodes.emplace_back(engine, &ui, blockTimeSteps, engine.rand_int<>(stepsPerTxRange.first, stepsPerTxRange.second), observer);
-    }
+        for(int i = 0 ; i < N; i++) {
+            bool observer = false;
+            if(observers < observerCount && engine.rand_int<>(1,10) > 5) {
+                observer = true;
+                observers++;
+            }
+            nodes.emplace_back(engine, &ui, blockTimeSteps, engine.rand_int<>(stepsPerTxRange.first, stepsPerTxRange.second), observer);
+        }
 
-    for(int i = 0 ; i < numberPeers ; i++) {
-        for(int j = 0; j < N; j++) {
-            if(i == 0) {
-                if(j > 0) {
-                    int candidate = engine.rand_int<>(0, j-1);
+        for(int i = 0 ; i < numberPeers ; i++) {
+            for(int j = 0; j < N; j++) {
+                if(i == 0) {
+                    if(j > 0) {
+                        int candidate = engine.rand_int<>(0, j-1);
+                        nodes[j].connect(nodes[candidate], engine.rand_int<>(latencyRange.first, latencyRange.second));
+                    }
+                } else {
+                    int candidate = 0;
+                    while(j == (candidate = engine.rand_int<>(0, N-1)) || nodes[j].has_peer(nodes[candidate]));
                     nodes[j].connect(nodes[candidate], engine.rand_int<>(latencyRange.first, latencyRange.second));
                 }
-            } else {
-                int candidate = 0;
-                while(j == (candidate = engine.rand_int<>(0, N-1)) || nodes[j].has_peer(nodes[candidate]));
-                nodes[j].connect(nodes[candidate], engine.rand_int<>(latencyRange.first, latencyRange.second));
             }
         }
-    }
 
-    for(auto& it : nodes) {
-        engine.register_component(it); 
-    }
-
-    std::thread t([&]() {
-        auto next_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
-        int i = 0;
-        while(!!run) {
-            ui.set_step(i);
-            engine.step();
-            i++;
-            if(std::chrono::steady_clock::now() < next_time) {
-                std::this_thread::sleep_until(next_time);
-            }
-            while(next_time < std::chrono::steady_clock::now()) {
-                next_time += std::chrono::milliseconds(100);
-            }
+        for(auto& it : nodes) {
+            engine.register_component(it); 
         }
-    });
 
-    ui.run();
+        std::thread t([&]() {
+            auto next_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+            int i = 0;
+            while(!!run) {
+                ui.set_step(i);
+                engine.step();
+                i++;
+                if(std::chrono::steady_clock::now() < next_time) {
+                    std::this_thread::sleep_until(next_time);
+                }
+                while(next_time < std::chrono::steady_clock::now()) {
+                    next_time += std::chrono::milliseconds(100);
+                }
+            }
+        });
+
+        ui.run();
+        
+        run = false;
+        t.join();
+    }
     
-    run = false;
-    t.join();
+    for(auto& it : nodes) {
+        it.print_chain();
+    }
 
     return 0;
 }

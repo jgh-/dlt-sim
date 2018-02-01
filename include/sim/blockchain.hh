@@ -34,7 +34,7 @@ namespace sim {
         sha256_t sha;
         sha256_t prev_block;
         sha256_t merkle;
-
+        
         auto hash() const {
             return sha;
         }
