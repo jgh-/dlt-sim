@@ -1,10 +1,11 @@
 
-#include <deque>
-#include <random>
 #include <utility>
 #include <cassert>
 #include <sstream>
 #include <iomanip>
+#include <random>
+#include <limits>
+#include <deque>
 
 #include "sim/ui.hh"
 #include "sim/sim.hh"
@@ -18,7 +19,7 @@ const int numberPeers = 3;
 const int blockTimeSteps = stepsPerSecond * 10; // make a new block every 10 "seconds"
 const int N = 50; // number of nodes
 //const int B = N; // number of blockmaking nodes
-const int Z = N * 9 / 10 ; // number of block candidates before forming opinion
+const int Z = N * 9 / 10; // number of block candidates before forming opinion
 const int observerCount = N / 5;
 const std::pair<int, int> stepsPerTxRange { stepsPer100ms * 10, stepsPer100ms * 20 };
 const std::pair<int, int> latencyRange { stepsPer100ms, stepsPer100ms * 4 };
@@ -40,7 +41,7 @@ struct packet {
 };
 
 struct node : public sim::node<packet>, public sim::component {
-    node(sim::engine& e, sim::ui& ui, int steps, int tx_steps, bool observer)
+    node(sim::engine& e, sim::ui* ui, int steps, int tx_steps, bool observer)
     : sim::node<packet>(e)
     , ui(ui)
     , blocksteps(steps)
@@ -55,7 +56,6 @@ struct node : public sim::node<packet>, public sim::component {
             addTx(*pkt.txn);
         }
         if(pkt.op && cur_seq > -1) {
-            //printf("[%d] cur_seq=%d opinion_ct=%zu\n", id, cur_seq, opinions.size());
             if(opinions.find(pkt.op->nodeid) == opinions.end()) {
                 opinions.emplace(pkt.op->nodeid, pkt.op);
                 send_packet(pkt);
@@ -76,7 +76,7 @@ struct node : public sim::node<packet>, public sim::component {
                         auto sha = it->hash();
                         str += sim::sha_shortcode(sha) + " ";
                     }
-                    ui.log(str);    
+                    log(str);    
                 }
                 send_packet(pkt);
             }
@@ -102,7 +102,8 @@ struct node : public sim::node<packet>, public sim::component {
         }
         if(current_step_ - last_txstep > txsteps) {
             last_txstep = current_step_;
-            addTx(sim::tx {});
+            auto txn = sim::tx { engine_.rand_int<int64_t>(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max()) };
+            addTx(txn);
         }
         if(opinions.size() >= Z) {
             // decide on block.
@@ -150,7 +151,7 @@ struct node : public sim::node<packet>, public sim::component {
                         auto sha = it->hash();
                         str += sim::sha_shortcode(sha) + " ";
                     }
-                    ui.log(str);    
+                    log(str);    
                 }
                 
             } else {
@@ -170,7 +171,6 @@ struct node : public sim::node<packet>, public sim::component {
         bool res = false;
         auto search_hash = t.hash();
         if(txs.size() > 0) {
-            
             res = std::find_if(txs.begin(), txs.end(), [search_hash](const std::shared_ptr<sim::tx>& t) {
                 return search_hash == t->hash();
             }) != txs.end();
@@ -187,7 +187,7 @@ struct node : public sim::node<packet>, public sim::component {
         }
         return res;
     }
-    bool addTx(sim::tx t) {
+    bool addTx(const sim::tx& t) {
         std::unique_lock<std::recursive_mutex> lk(mut);
         if(!hasTx(t)) {
             auto next_t = std::make_shared<sim::tx>(t);
@@ -230,7 +230,7 @@ struct node : public sim::node<packet>, public sim::component {
             current_block->recompute_hash();
             
             if(observer) {
-                ui.log(std::to_string(id) + ": created block candidate " + sim::sha_shortcode(current_block->hash()));
+                log(std::to_string(id) + ": created block candidate " + sim::sha_shortcode(current_block->hash()));
             }
             {
                 // send out our opinion (that we are the winner, naturally)
@@ -246,6 +246,14 @@ struct node : public sim::node<packet>, public sim::component {
         }
     }
     
+    void log(std::string str) {
+        if(ui) {
+            ui->log(str);
+        } else {
+            sim::log().info(str);
+        }
+    }
+
     node(const node& other)
     : sim::node<packet>(other)
     , ui(other.ui)
@@ -261,7 +269,7 @@ struct node : public sim::node<packet>, public sim::component {
     , last_txstep(other.last_txstep)
     , cur_seq(other.cur_seq) {};
     
-    sim::ui& ui;
+    sim::ui* ui;
     std::recursive_mutex mut;
     std::shared_ptr<sim::block> current_block;
     std::deque<std::shared_ptr<sim::tx>> txs;
@@ -277,33 +285,43 @@ struct node : public sim::node<packet>, public sim::component {
 };
 
 int main(int argc, const char * argv[]) {
-    // insert code here...
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, N-1);
-    std::uniform_int_distribution<> latency(latencyRange.first, latencyRange.second);
-    std::uniform_int_distribution<> tx_steps(stepsPerTxRange.first, stepsPerTxRange.second);
-    sim::engine engine;
+
+
+    int64_t seed = time(NULL);
+    if(argc > 1) {
+        seed = std::strtol(argv[1],0,10);
+    }
+    sim::engine engine(seed);
     std::atomic<bool> run {true};
     sim::ui ui {};
-
+    ui.log("Using seed " + std::to_string(seed));
     std::vector<node> nodes;
     int observers = 0;
-    for(int i = 0 ; i < N ; i++) {
-        bool observer = (observers++ < observerCount);
-        nodes.emplace_back(engine, ui, blockTimeSteps, tx_steps(gen), observer);
-    }
 
     for(int i = 0 ; i < N; i++) {
-        if(nodes[i].connections() < numberPeers) {
-            engine.register_component(nodes[i]);
-             for(auto j = nodes[i].connections() ; j < numberPeers; j++) {
-                 int candidate {0};
-                 while(i != candidate && nodes[i].has_peer(nodes[(candidate = dis(gen))]));
-                 nodes[i].connect(nodes[candidate], latency(gen));
-             }
+        bool observer = (observers++ < observerCount);
+        nodes.emplace_back(engine, &ui, blockTimeSteps, engine.rand_int<>(stepsPerTxRange.first, stepsPerTxRange.second), observer);
+    }
+
+    for(int i = 0 ; i < numberPeers ; i++) {
+        for(int j = 0; j < N; j++) {
+            if(i == 0) {
+                if(j > 0) {
+                    int candidate = engine.rand_int<>(0, j-1);
+                    nodes[j].connect(nodes[candidate], engine.rand_int<>(latencyRange.first, latencyRange.second));
+                }
+            } else {
+                int candidate = 0;
+                while(j == (candidate = engine.rand_int<>(0, N-1)) || nodes[j].has_peer(nodes[candidate]));
+                nodes[j].connect(nodes[candidate], engine.rand_int<>(latencyRange.first, latencyRange.second));
+            }
         }
     }
+
+    for(auto& it : nodes) {
+        engine.register_component(it); 
+    }
+
     std::thread t([&]() {
         auto next_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
         int i = 0;
@@ -321,7 +339,7 @@ int main(int argc, const char * argv[]) {
     });
 
     ui.run();
-
+    
     run = false;
     t.join();
 

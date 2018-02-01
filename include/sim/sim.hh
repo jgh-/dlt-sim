@@ -2,6 +2,7 @@
 #ifndef SIM_HH
 #define SIM_HH
 #include <experimental/optional>
+#include <random>
 #include <future>
 #include <vector>
 #include <queue>
@@ -36,6 +37,10 @@ namespace sim {
     // time by 1 step.
     //
     struct engine {
+
+        engine(int64_t seed)
+        : gen_(seed) {};
+        
         void register_component(component& c) {
             c.set_current_step(current_step_);
             components_.insert(&c);
@@ -56,7 +61,20 @@ namespace sim {
             }
         }
         
+        template <typename IntType = int>
+        IntType rand_int(IntType min, IntType max) {
+            static_assert(std::is_integral<IntType>(), "IntType must be integral");
+            return std::uniform_int_distribution<IntType>(min,max)(gen_);
+        }
+
+        template <typename RealType = float>
+        RealType rand_real(RealType min, RealType max) {
+            static_assert(std::is_floating_point<RealType>(), "RealType must be floating point");
+            return std::uniform_real_distribution<RealType>(min,max)(gen_);
+        }
+
     private:
+        std::mt19937 gen_;
         int64_t current_step_ {0};
         std::set<component*> components_;
     };

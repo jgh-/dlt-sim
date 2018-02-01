@@ -26,7 +26,7 @@ namespace sim {
         std::thread updater([&]() {
             while(running) {
                 redraw();
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
             }
         });
 
@@ -80,7 +80,9 @@ namespace sim {
             dirty = true;
         } else {
             if(dirty) {
-                wclear(it->second);
+               werase(it->second);
+               box(it->second, 0, 0);
+               wrefresh(it->second);
             }
         }
 
@@ -117,18 +119,21 @@ namespace sim {
 
             max_loglines_ = maxy / 2 - 4;
             wnd_.emplace(element::WND_LOG, create_newwin(h,w,y,x));
+            it = wnd_.find(element::WND_LOG);
+            dirty = true;
         } else {
             if(dirty) {
-                wclear(it->second);
+               werase(it->second);
+               box(it->second, 0, 0);
+               wrefresh(it->second);
             }
         }
         
         // (re)Draw text if needed
         if(dirty && !loglines_.empty()) {
-            for(auto& it : loglines_) {
-                if(!it.empty()) {
-                    mvprintw(++y, x+1, "%s", it.c_str());
-                }
+
+            for(auto& iit : loglines_) {
+                mvprintw( ++y, x+1, "%s", iit.c_str());
             }
             dirty_[element::WND_LOG] = false;
         }
@@ -157,8 +162,8 @@ extern "C" {
 
         local_win = newwin(height, width, starty, startx);
         box(local_win, 0 , 0);      /* 0, 0 gives default characters 
-                         * for the vertical and horizontal
-                         * lines            */
+                                     * for the vertical and horizontal
+                                     * lines            */
         wrefresh(local_win);        /* Show that box        */
 
         return local_win;

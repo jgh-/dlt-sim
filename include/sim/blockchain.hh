@@ -12,10 +12,8 @@ namespace sim {
         sha256_t pubkey;
         sha256_t sha;
 
-        tx() {
-            auto now = std::chrono::steady_clock::now();
-            pubkey = sha256(reinterpret_cast<uint8_t*>(&now), sizeof(now));
-
+        tx(int64_t num) {
+            pubkey = sha256(reinterpret_cast<uint8_t*>(&num), sizeof(num));
             recompute_hash();
         }
         auto hash() const {
