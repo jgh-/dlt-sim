@@ -9,6 +9,8 @@
 #include <map>
 #include <set>
 
+#include <unpause/async>
+
 #include "sim/sha.hh"
 
 namespace sim {
@@ -54,10 +56,13 @@ namespace sim {
             current_step_++;
             std::list<std::future<void>> futures;
             for(auto& it : components_) {
-                futures.emplace_back(std::async(std::launch::async, [it, this]() {
+                auto p = std::make_shared<std::promise<void>>();
+                futures.emplace_back(p->get_future());
+                unpause::async::run(pool_, [this, it, p] {
                     it->set_current_step(current_step_);
                     it->step();
-                }));
+                    p->set_value();
+                });
             }
         }
         
@@ -74,6 +79,7 @@ namespace sim {
         }
 
     private:
+        unpause::async::thread_pool pool_;
         std::mt19937 gen_;
         int64_t current_step_ {0};
         std::set<component*> components_;

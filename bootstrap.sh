@@ -30,4 +30,15 @@ pushd $DEPS/spdlog
     echo $SEPARATOR >> $THIRDPARTY
 popd
 
+# unpause tools
+git clone https://github.com/unpause-live/cpptools.git $DEPS/unpause-tools
+pushd $DEPS/unpause-tools
+    cp -R include/* $WORKING_DIR/cpp_modules/include
+    GIT_REV=$(git rev-parse --short HEAD)
+    cp -R include/unpause/* $WORKING_DIR/cpp_modules/include/unpause
+    printf "\n\nC++Tools by Unpause ($GIT_REV)\n" >> $THIRDPARTY
+    cat LICENSE >> $THIRDPARTY
+    echo $SEPARATOR >> $THIRDPARTY
+popd
+
 rm -rf $DEPS
