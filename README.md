@@ -1,6 +1,6 @@
 ## simulation framework for blockchain/dlt, wip.
 
-Deterministic and repeatible simulation framework for experimenting with consensus protocols for blockchain and other types of distributed ledgers.
+Deterministic and repeatable simulation framework for experimenting with consensus protocols for blockchain and other types of distributed ledgers.
 
 
 ### Requirements
