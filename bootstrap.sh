@@ -41,4 +41,17 @@ pushd $DEPS/unpause-tools
     echo $SEPARATOR >> $THIRDPARTY
 popd
 
+#base64
+git clone https://github.com/tkislan/base64.git $DEPS/base64
+mkdir -p $WORKING_DIR/cpp_modules/include/base64
+pushd $DEPS/base64
+    git fetch --tags
+    GIT_REV=$(git rev-parse --short HEAD)
+    cp base64.h $WORKING_DIR/cpp_modules/include/base64
+
+    printf "\n\nbase64.h ($GIT_REV)\n" >> $THIRDPARTY
+    cat LICENSE >> $THIRDPARTY
+    printf "\n" >> $THIRDPARTY
+    echo $SEPARATOR >> $THIRDPARTY
+popd
 rm -rf $DEPS

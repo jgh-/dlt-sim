@@ -2,6 +2,8 @@
 #define SIM_SHA_HH
 #include <cryptopp/sha.h>
 #include <cstdint>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <array>
 

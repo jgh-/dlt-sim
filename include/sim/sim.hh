@@ -2,6 +2,8 @@
 #ifndef SIM_HH
 #define SIM_HH
 #include <experimental/optional>
+#include <iomanip>
+#include <sstream>
 #include <random>
 #include <future>
 #include <vector>
